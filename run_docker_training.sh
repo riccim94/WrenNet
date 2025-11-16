@@ -5,9 +5,9 @@ IMAGE_NAME="bird_classification_edge"
 CONTAINER_NAME_DEFAULT="bird_train_container" # Nome container di default se non specificato
 
 # Percorsi relativi alla posizione dello script (presumendo che i dataset siano nella root del progetto)
-HOST_BIRD_SOUND_DATASET_DIR="$PWD/bird_sound_dataset"
-HOST_ESC50_DIR="$PWD/esc-50/ESC-50-master"
-HOST_AUGMENTED_DATASET_DIR="$PWD/augmented_dataset" # Lascia vuoto "" se non usi pregenerated_no_birds o la cartella non esiste
+HOST_BIRD_SOUND_DATASET_DIR="${BIRD_DATASET_DIR:-$PWD/bird_sound_dataset}"
+HOST_ESC50_DIR="${ESC50_DATASET_DIR:-$PWD/esc-50/ESC-50-master}"
+HOST_AUGMENTED_DATASET_DIR="${AUGMENTED_DATASET_DIR:-$PWD/augmented_dataset}" # Lascia vuoto "" se non usi pregenerated_no_birds o la cartella non esiste
 HOST_CONFIG_DIR="$PWD/config"  # Presume che la cartella config sia nella stessa directory dello script
 HOST_LOGS_DIR="$PWD/logs"      # Presume che la cartella logs sia nella stessa directory dello script
 
@@ -19,6 +19,36 @@ CONTAINER_AUGMENTED_DATASET_DIR="$CONTAINER_APP_DIR/augmented_dataset"
 CONTAINER_CONFIG_DIR="$CONTAINER_APP_DIR/config"
 CONTAINER_LOGS_DIR="$CONTAINER_APP_DIR/logs"
 
+# --- Utility functions ---
+resolve_dataset_dir() {
+    local dataset_name="$1"
+    shift
+    for candidate in "$@"; do
+        if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    if command -v find >/dev/null 2>&1; then
+        local detected
+        detected=$(find "$PWD/.." -maxdepth 4 -type d -name "$dataset_name" 2>/dev/null | head -n 1)
+        if [ -n "$detected" ]; then
+            echo "$detected"
+            return 0
+        fi
+    fi
+    echo ""
+}
+
+docker_has_gpu_support() {
+    local runtimes
+    runtimes=$(docker info --format '{{json .Runtimes}}' 2>/dev/null)
+    if [ -n "$runtimes" ] && echo "$runtimes" | grep -qi "nvidia"; then
+        return 0
+    fi
+    return 1
+}
+
 # --- Fine Configurazione ---
 
 # Gestione argomenti
@@ -26,6 +56,7 @@ CONTAINER_NAME="$CONTAINER_NAME_DEFAULT"
 GPU_ID=""
 EXTRA_HYDRA_PARAMS=""
 RUN_ON_MAC=false # Flag per esecuzione su Mac
+FORCE_CPU=false
 
 # Parsing degli argomenti per nome container, GPU e parametri Hydra
 # Esempio: ./run_docker_training.sh mio_container GPU_ID=0 training.epochs=10
@@ -36,8 +67,14 @@ if [ "$#" -ge 1 ]; then
     while (( "$#" )); do
         if [[ "$1" == "GPU_ID="* ]]; then
             GPU_ID="${1#GPU_ID=}"
+            lower_gpu_id=$(printf '%s' "$GPU_ID" | tr '[:upper:]' '[:lower:]')
+            if [[ "$lower_gpu_id" == "cpu" ]]; then
+                FORCE_CPU=true
+            fi
         elif [[ "$1" == "MAC" ]]; then # Aggiunto check per flag MAC
             RUN_ON_MAC=true
+        elif [[ "$1" == "CPU" ]]; then
+            FORCE_CPU=true
         else
             EXTRA_HYDRA_PARAMS="$EXTRA_HYDRA_PARAMS $1"
         fi
@@ -50,26 +87,77 @@ echo "Nome Container: $CONTAINER_NAME"
 
 # Rinomino RUN_ON_MAC in USE_GPU per coerenza
 USE_GPU=true
-if [ "$RUN_ON_MAC" = true ]; then
+if [ "$RUN_ON_MAC" = true ] || [ "$FORCE_CPU" = true ]; then
     USE_GPU=false
 fi
 
 # GPU configuration
 if [[ $USE_GPU == true ]]; then
-    if [[ -n $GPU_ID ]]; then
-        echo "GPU ID: $GPU_ID"
-        GPU_FLAG_OPTS="--gpus device=$GPU_ID"
+    if docker_has_gpu_support; then
+        if [[ -n $GPU_ID ]]; then
+            echo "GPU ID: $GPU_ID"
+            GPU_FLAG_OPTS="--gpus device=$GPU_ID"
+        else
+            echo "GPU ID: all (default)"
+            GPU_FLAG_OPTS="--gpus all"
+        fi
     else
-        echo "GPU ID: all (default)"
-        GPU_FLAG_OPTS="--gpus all"
+        echo "Nessun runtime GPU disponibile in Docker: eseguo su CPU."
+        USE_GPU=false
     fi
-else
-    echo "GPU ID: N/A (Esecuzione su Mac, CPU forzata)"
+fi
+
+if [[ $USE_GPU == false ]]; then
+    echo "GPU ID: N/A (Esecuzione su CPU)"
     GPU_FLAG_OPTS=""
 fi
 
 echo "Parametri Hydra aggiuntivi: ${EXTRA_HYDRA_PARAMS:-Nessuno}"
 echo "-----------------------------"
+
+# Risoluzione percorsi dataset
+DEFAULT_BIRD_DATASET_DIR="$HOST_BIRD_SOUND_DATASET_DIR"
+HOST_BIRD_SOUND_DATASET_DIR=$(resolve_dataset_dir "bird_sound_dataset" \
+    "$HOST_BIRD_SOUND_DATASET_DIR" \
+    "$PWD/data/bird_sound_dataset" \
+    "$PWD/datasets/bird_sound_dataset" \
+    "$PWD/dataset_transfer/bird_sound_dataset" \
+    "$PWD/../bird_sound_dataset" \
+    "$HOME/bird_sound_dataset")
+if [ -n "$HOST_BIRD_SOUND_DATASET_DIR" ]; then
+    echo "bird_sound_dataset: $HOST_BIRD_SOUND_DATASET_DIR"
+else
+    echo "Attenzione: Directory bird_sound_dataset non trovata (provati anche $DEFAULT_BIRD_DATASET_DIR e percorsi standard)."
+fi
+
+DEFAULT_ESC50_DIR="$HOST_ESC50_DIR"
+HOST_ESC50_DIR=$(resolve_dataset_dir "ESC-50-master" \
+    "$HOST_ESC50_DIR" \
+    "$PWD/ESC-50-master" \
+    "$PWD/datasets/ESC-50-master" \
+    "$PWD/../esc-50/ESC-50-master" \
+    "$PWD/../ESC-50-master" \
+    "$HOME/ESC-50/ESC-50-master" \
+    "$HOME/ESC-50-master")
+if [ -n "$HOST_ESC50_DIR" ]; then
+    echo "ESC-50-master: $HOST_ESC50_DIR"
+else
+    echo "Attenzione: Directory ESC-50-master non trovata (provati anche $DEFAULT_ESC50_DIR e percorsi standard)."
+fi
+
+if [ -n "$HOST_AUGMENTED_DATASET_DIR" ]; then
+    DEFAULT_AUGMENTED_DIR="$HOST_AUGMENTED_DATASET_DIR"
+fi
+HOST_AUGMENTED_DATASET_DIR=$(resolve_dataset_dir "augmented_dataset" \
+    "$HOST_AUGMENTED_DATASET_DIR" \
+    "$PWD/dataset_transfer/augmented_dataset" \
+    "$PWD/../augmented_dataset" \
+    "$HOME/augmented_dataset")
+if [ -n "$HOST_AUGMENTED_DATASET_DIR" ]; then
+    echo "augmented_dataset: $HOST_AUGMENTED_DATASET_DIR"
+elif [ -n "$DEFAULT_AUGMENTED_DIR" ]; then
+    echo "Attenzione: Directory augmented_dataset non trovata (provati anche $DEFAULT_AUGMENTED_DIR e percorsi standard)."
+fi
 
 # Costruzione dei mount per i volumi
 VOLUME_MOUNTS=""
@@ -109,8 +197,14 @@ VOLUME_MOUNTS="$VOLUME_MOUNTS -v $HOST_LOGS_DIR:$CONTAINER_LOGS_DIR"
 
 
 # Comando Docker run
+# Usa -it solo se la shell corrente è interattiva
+DOCKER_TTY_FLAGS="-it"
+if [ ! -t 1 ] || [ ! -t 0 ]; then
+    DOCKER_TTY_FLAGS="-i"
+fi
+
 # shellcheck disable=SC2086
-docker run $GPU_FLAG_OPTS --name "$CONTAINER_NAME" --rm -it --shm-size=16gb \
+docker run $GPU_FLAG_OPTS --name "$CONTAINER_NAME" --rm $DOCKER_TTY_FLAGS --shm-size=16gb \
     $VOLUME_MOUNTS \
     "$IMAGE_NAME" \
     python train.py $EXTRA_HYDRA_PARAMS

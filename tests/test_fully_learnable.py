@@ -12,7 +12,7 @@ import os
 sys.path.append('.')
 
 from differentiable_spec_torch import FullyLearnableFilterBank, create_spectrogram_module
-from models import Improved_Phi_GRU_ATT
+from birds_distillation_edge.models import Improved_Phi_GRU_ATT
 
 def test_fully_learnable_filter_bank():
     """Test the FullyLearnableFilterBank class directly."""

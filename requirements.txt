@@ -14,9 +14,15 @@ tqdm
 librosa
 torchsummary==1.5.1
 birdnetlib==0.18.0
-tensorflow>=2.8.0
-tflite-runtime
+
+# TensorFlow varies by platform: keep macOS + Docker/Linux happy
+tensorflow==2.15.0; sys_platform != "darwin"
+tflite-runtime==2.14.0; sys_platform != "darwin"
+tensorflow-macos==2.15.0; sys_platform == "darwin"
+tensorflow-metal==1.1.0; sys_platform == "darwin"
 ffmpeg-python
+onnx
+onnxruntime
 
 # Additional dependencies for preprocessing and dataset handling
 scipy>=1.9.0
@@ -27,3 +33,4 @@ pathlib2>=2.3.0  # For older Python compatibility (though pathlib is in stdlib f
 
 # Optional but recommended
 colorama>=0.4.0  # For colored terminal output
+lightning

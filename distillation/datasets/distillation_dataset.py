@@ -8,7 +8,7 @@ import sys
 # Add project root to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from datasets.dataset_factory import create_combined_dataset
+from birds_distillation_edge.data import create_combined_dataset
 
 class FilteredDistillationDataset:
     """

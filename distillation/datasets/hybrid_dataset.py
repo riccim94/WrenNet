@@ -17,7 +17,7 @@ import logging
 # Add project root to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from datasets.audio_utils import extract_call_segments
+from birds_distillation_edge.data.audio_utils import extract_call_segments
 
 logger = logging.getLogger(__name__)
 

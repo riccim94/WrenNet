@@ -16,40 +16,45 @@ This repository contains a comprehensive bird sound classification system design
 
 ## Quick Start
 
-**Get started in 3 steps:**
-
-1. **Setup Environment:**
+1. **Clone & install**
    ```bash
    git clone <repository_url>
    cd bird_classification_edge
-   python3 -m venv venv && source venv/bin/activate
+   python3 -m venv .venv && source .venv/bin/activate
    pip install -r requirements.txt
    ```
-
-2. **Prepare Dataset:**
+2. **Prepare data**
    ```bash
-   # Place your bird recordings in bird_sound_dataset/species_name/
-   # Generate "no birds" samples
-   python generate_no_birds_samples.py
+   # drop your recordings under bird_sound_dataset/<species>/
+   python generate_no_birds_samples.py --num_samples 500
    ```
-
-3. **Train Model:**
+3. **Train (local)**
    ```bash
-   # Standard training
-   python train.py
-   
-   # Or with knowledge distillation
-   python extract_soft_labels.py
-   python train_distillation.py
+   python -m birds_distillation_edge.cli.train \
+       --config-name base \
+       data.allowed_bird_classes='[Bubo_bubo,Apus_apus]' \
+       trainer.max_epochs=1
    ```
-
-4. **Benchmark Your Model:**
+4. **Train (Docker)**
    ```bash
-   # Quick test (10 files)
-   ./run_docker_benchmark.sh my_test 1 debug.files_limit=10
-   
-   # Full benchmark
-   ./run_docker_benchmark.sh my_benchmark 1
+   docker build -t bird_classification_edge .
+   ./run_docker_training.sh baseline --config-name base trainer.max_epochs=50
+   ```
+5. **Export + infer**
+   ```bash
+   ./run_docker_export_onnx.sh export_all \
+       logs/lightning/birds_distillation_edge/version_X/checkpoints/epoch=Y-step=Z.ckpt \
+       exports/birds_logmel.onnx
+   python -m birds_distillation_edge.cli.infer_onnx \
+       --model-path exports/birds_logmel.onnx \
+       --audio-path samples/test.wav \
+       --input-format mel \
+       --save-json outputs/test_soft_labels.json
+   ```
+6. **Benchmark (optional)**
+   ```bash
+   ./run_docker_benchmark.sh smoke 1 debug.files_limit=10
+   ./run_docker_benchmark.sh full 1
    ```
 
 ## Installation and Setup
@@ -69,15 +74,22 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
     ```
 
 ### 2. Dataset Preparation
-- **Bird Recordings**: Place in `bird_sound_dataset/`, organized by species folders
-- **Environmental Sounds**: ESC-50 dataset downloads automatically on first run
-- **No-Birds Samples**: Generate using `python generate_no_birds_samples.py`
+- **Bird Recordings**: place WAV/MP3 files in `bird_sound_dataset/<species>/clip.wav`
+- **ESC-50**: leave `esc-50/ESC-50-master` empty and let the loader download automatically
+- **No-birds samples**: `python generate_no_birds_samples.py --num_samples 500 --esc50_ratio 0.5`
+- Override paths via env vars (`BDE_BIRD_DATASET_DIR`, `BDE_ESC50_DIR`, `BDE_NO_BIRDS_DIR`) or CLI overrides.
 
 ### 3. Verify Installation
 ```bash
-# Test basic functionality
-python train.py training.epochs=1 debug.files_limit=10
+# Quick smoke test
+python -m birds_distillation_edge.cli.train \
+    --config-name base \
+    trainer.max_epochs=1 \
+    +trainer.limit_train_batches=5 \
+    +trainer.limit_val_batches=2
 ```
+
+> ℹ️  The `directory.md` file captures the canonical structure, cleanup tasks, and pending migrations (e.g., removing legacy `datasets/` and `models.py`). Refer to it when reorganising the repo.
 
 ## Project Structure
 
@@ -88,49 +100,13 @@ bird_classification_edge/
 │   ├── augmented_dataset/           # Generated "no birds" samples
 │   └── esc-50/                      # ESC-50 environmental sounds
 │
-├── Core Training
-│   ├── train.py                     # Main training script
-│   ├── models.py                    # Neural network architectures
-│   ├── modules.py                   # Model components (GRU, attention, etc.)
-│   └── config/                      # Training configurations
-│
-├── Datasets
-│   ├── datasets/
-│   │   ├── bird_dataset.py          # Bird sound dataset loader
-│   │   ├── esc50_dataset.py         # ESC-50 environmental sounds
-│   │   ├── empty_segment_dataset.py # Silent segment extraction
-│   │   ├── dataset_factory.py       # Combined dataset creation
-│   │   └── audio_utils.py           # Audio processing utilities
-│   └── generate_no_birds_samples.py # Offline "no birds" generation
-│
-├── Knowledge Distillation
-│   ├── distillation/
-│   │   ├── scripts/                 # Distillation execution scripts
-│   │   ├── datasets/                # Soft label dataset loaders
-│   │   ├── losses/                  # Advanced loss functions (focal, distillation)
-│   │   └── configs/                 # 8 comprehensive training configurations
-│   ├── extract_soft_labels.py       # Extract BirdNET soft labels
-│   └── train_distillation.py        # Train with knowledge distillation & focal loss
-│
-├── Benchmarking
-│   ├── benchmark/
-│   │   ├── run_benchmark.py         # Main benchmark orchestrator
-│   │   ├── predict_student.py       # Student model predictions
-│   │   ├── predict_birdnet.py       # BirdNET reference predictions
-│   │   ├── compare_predictions.py   # Performance comparison & metrics
-│   │   └── config/                  # Benchmark configurations
-│   └── run_docker_benchmark.sh      # Docker benchmark execution
-│
-├── Docker & Deployment
-│   ├── Dockerfile                   # Main training container
-│   ├── Dockerfile.benchmark         # Benchmark container
-│   ├── run_docker_*.sh              # Docker execution scripts
-│   └── docker-compose.yml           # Multi-container orchestration
-│
-└── Documentation
-    ├── README.md                    # This file
-    ├── benchmark/README.md          # Benchmark system guide
-    └── distillation/README.md       # Knowledge distillation guide
+├── birds_distillation_edge/         # Lightning modules, CLI entry points, datasets
+├── config/                          # Hydra configs (`base.yaml`, `debug.yaml`, `distillation.yaml`, experiments/)
+├── legacy scripts (train.py, modules.py, datasets/) kept for reference
+├── benchmark/, distillation/        # Specialized tooling (analysis, KD, scripts)
+├── run_docker_*.sh                  # Docker helpers (training, export, benchmark)
+├── datasets & assets                # `bird_sound_dataset`, `augmented_dataset`, `esc-50`
+└── docs                             # README.md, directory.md, lightning.md, etc.
 ```
 
 ## Standard Training Workflow
@@ -138,18 +114,25 @@ bird_classification_edge/
 Train a bird classification model using standard supervised learning.
 
 ### 1. Configure Training
-Edit `config/bird_classification.yaml`:
+Edit `config/experiments/four_birds_combined.yaml` (extends `config/base.yaml`):
 ```yaml
-training:
-  epochs: 100
-  batch_size: 32
-  
-dataset:
+defaults:
+  - base
+
+data:
   allowed_bird_classes: ["Bubo_bubo", "Apus_apus", "Certhia_familiaris"]
-  load_pregenerated_no_birds: true  # Use pre-generated samples
-  
-optimizer:
-  lr: 0.001
+  load_pregenerated_no_birds: true
+  pregenerated_no_birds_dir: augmented_dataset/no_birds/
+
+model:
+  params:
+    spectrogram_type: combined_log_linear
+    num_classes: 4  # birds + no_bird class
+
+optimizers:
+  main:
+    lr: 0.001
+    weight_decay: 1.0e-4
 ```
 
 ### 2. Handle "No Birds" Samples
@@ -174,20 +157,106 @@ python generate_no_birds_samples.py \
 
 ### 3. Train the Model
 ```bash
-# Basic training
-python train.py
+# Local
+python -m birds_distillation_edge.cli.train --config-name base
 
-# With parameter overrides
-python train.py training.epochs=50 optimizer.lr=0.001 dataset.num_workers=8
+# With overrides
+python -m birds_distillation_edge.cli.train \
+    --config-name base \
+    trainer.max_epochs=50 \
+    optimizers.main.lr=1e-3 \
+    data.allowed_bird_classes='[Bubo_bubo,Apus_apus,Certhia_familiaris]'
 
-# GPU selection
-CUDA_VISIBLE_DEVICES=1 python train.py
+# Force a specific GPU/CPU
+CUDA_VISIBLE_DEVICES=1 python -m birds_distillation_edge.cli.train --config-name base
 ```
 
 ### 4. Monitor Training
 - Logs: `logs/` directory
 - Models: Saved as `*.pt` files
 - Metrics: Displayed during training
+
+### 5. Fast Smoke Test (Optional)
+When you just need to confirm that the whole stack runs end-to-end, limit the batches and let Lightning exit early. The helper script now works both interactively and inside CI:
+
+```bash
+./run_docker_training.sh quick_sanity GPU_ID=cpu \
+    +trainer.fast_dev_run=2 \
+    data.batch_size=2 data.num_workers=0 \
+    "data.allowed_bird_classes=[Poecile_montanus]" \
+    data.num_no_bird_samples=8 data.esc50_no_bird_ratio=1.0
+```
+
+This keeps dataset creation, augmentation, logging, and checkpoints exercised without waiting for a full epoch.
+
+## Lightning Modules & CLI
+
+All new training/validation flows are powered by **PyTorch Lightning** inside the `birds_distillation_edge` package. The important entry points are:
+
+- `birds_distillation_edge.experiment.BirdsExperiment`: wraps the backbone (`Improved_Phi_GRU_ATT`) plus metrics, losses, and schedulers.
+- `birds_distillation_edge.datamodule.BirdsDataModule`: builds the combined bird/no-bird dataset according to the Hydra config.
+- `birds_distillation_edge.cli.train`: thin wrapper that instantiates both objects, wires callbacks/loggers, and runs the Lightning `Trainer`.
+
+### Running the Lightning CLI
+```bash
+python -m birds_distillation_edge.cli.train \
+    --config-name base \
+    trainer.max_epochs=40 \
+    data.allowed_bird_classes='[Bubo_bubo,Apus_apus]' \
+    data.load_pregenerated_no_birds=true \
+    data.num_no_bird_samples=200
+```
+- Anything before `--config-name` is standard Python/Lightning; everything after is a Hydra override.
+- Common trainer overrides: `trainer.accelerator=gpu`, `trainer.devices=1`, `trainer.gradient_clip_val=0.5`.
+- Use `+trainer.limit_train_batches=10`/`+trainer.limit_val_batches=5` for dev runs.
+
+### Lightning Log Artifacts
+- Checkpoints → `logs/lightning/birds_distillation_edge/version_X/checkpoints/`
+- TensorBoard/CSV logs → `logs/lightning/birds_distillation_edge/version_X/`
+- `BirdsExperiment.log_dict(...)` exposes train/val loss, accuracy, distillation metrics, etc.
+
+### Customising Models
+All model parameters live under `model.params` in the config. Example overrides:
+```bash
+python -m birds_distillation_edge.cli.train \
+    --config-name base \
+    model.params.spectrogram_type=combined_log_linear \
+    model.params.hidden_dim=96 \
+    model.params.matchbox.base_filters=96
+```
+Every override is propagated to the Lightning module and stored inside the checkpoint, so the ONNX exporter can reconstruct the correct architecture.
+
+## ONNX Export & Inference
+
+After training on the full species set, export the Lightning checkpoint to ONNX (log-mel input by default) and run inference offline.
+
+### 1. Export via Docker (recommended)
+```bash
+./run_docker_export_onnx.sh export_full \
+    logs/lightning/birds_distillation_edge/version_7/checkpoints/epoch=59-step=3000.ckpt \
+    exports/birds_logmel.onnx \
+    --config-name base \
+    trainer.max_epochs=1 \
+    data.use_augmentation=false \
+    data.num_no_bird_samples=0 \
+    data.load_pregenerated_no_birds=true
+```
+The script mounts the repo, loads the checkpoint, wraps the model with the log-mel export module, and writes `exports/birds_logmel.onnx`.
+
+### 2. Run inference & collect soft labels
+```bash
+python -m birds_distillation_edge.cli.infer_onnx \
+    --model-path exports/birds_logmel.onnx \
+    --audio-path samples/test.wav \
+    --input-format mel \
+    --top-k 5 \
+    --save-json outputs/test_soft_labels.json
+```
+- Prints the hard label (species) and top-K probabilities.
+- Stores the full soft-label vector if `--save-json` is provided.
+- Pass `--class-map custom_labels.json` to override species names.
+
+> If you need the ONNX to consume raw waveforms, rerun the exporter with `--input-format waveform`; otherwise stick to `mel` for maximum compatibility on edge devices.
 
 ## Advanced Workflow: Knowledge Distillation
 
@@ -277,7 +346,7 @@ To train on a subset of species:
 
 3. **Update Configuration:**
    ```yaml
-   # distillation/configs/distillation_config.yaml
+  # config/distillation.yaml
    dataset:
      soft_labels_path: "soft_labels_custom"
      allowed_bird_classes: ["Poecile_montanus", "Certhia_familiaris", "Apus_apus", "Bubo_bubo"]
@@ -656,7 +725,7 @@ The benchmark provides comprehensive evaluation:
 ### Customization Examples
 
 #### Adding New Species
-1. Update training config: `config/bird_classification.yaml`
+1. Update training config: `config/experiments/four_birds_combined.yaml`
 2. Retrain your model with new species
 3. Benchmark automatically detects new classes
 
@@ -719,129 +788,79 @@ birdnet.confidence_threshold=0.5
 
 ## Docker Execution
 
-Containerized execution for consistent, reproducible training and benchmarking.
+Containerized workflows keep the environment consistent across machines and make it easy to run on servers/CI.
 
-### 1. Build Docker Images
+### 1. Build images
 ```bash
-# Main training image
-docker build -t bird_classification_edge .
+# main training/export image
+docker build --no-cache -t bird_classification_edge .
 
-# Benchmark-specific image
+# benchmark image (optional)
 docker build -f Dockerfile.benchmark -t bird_classification_benchmark .
 ```
 
-### 2. Available Docker Scripts
+### 2. Scripts overview
 
-| Script | Purpose | Example Usage |
-|--------|---------|---------------|
-| `run_docker_soft_labels.sh` | Extract BirdNET soft labels | `./run_docker_soft_labels.sh my_extraction GPU_ID=0` |
-| `run_docker_distillation.sh` | Knowledge distillation training | `./run_docker_distillation.sh my_training GPU_ID=0` |
-| `run_docker_benchmark.sh` | **Model benchmarking** | `./run_docker_benchmark.sh my_benchmark 1` |
-| `run_docker_training.sh` | Standard training | `./run_docker_training.sh my_training GPU_ID=0` |
+| Script | Purpose | Example |
+|--------|---------|---------|
+| `run_docker_training.sh` | Supervised Lightning training | `./run_docker_training.sh all_species --config-name base trainer.max_epochs=50` |
+| `run_docker_distillation.sh` | KD training from BirdNET labels | `./run_docker_distillation.sh kd_gpu0 --config-name distillation trainer.max_epochs=80` |
+| `run_docker_soft_labels.sh` | Extract BirdNET soft labels | `./run_docker_soft_labels.sh extract GPU_ID=0 soft_labels.output_dir=soft_labels_complete` |
+| `run_docker_benchmark.sh` | Compare student vs BirdNET | `./run_docker_benchmark.sh bench 1 debug.files_limit=500` |
+| `run_docker_export_onnx.sh` | Export checkpoint → ONNX | `./run_docker_export_onnx.sh export logs/.../last.ckpt exports/model.onnx --config-name base` |
 
-### 3. Docker Workflow Examples
+Each script mounts the repo at `/workspace`, forwards Hydra overrides, and cleans the container after completion.
 
-#### Complete Knowledge Distillation Pipeline
-```
-# Step 1: Extract soft labels from BirdNET
-./run_docker_soft_labels.sh extraction_gpu0 GPU_ID=0
-# Results saved to soft_labels_complete/
+### 3. Common workflows
 
-# Step 2: Train with knowledge distillation
-./run_docker_distillation.sh training_gpu0 GPU_ID=0 training.epochs=50
-# Model saved as best_distillation_model.pt
-
-# Step 3: Benchmark against BirdNET
-./run_docker_benchmark.sh benchmark_gpu1 1 debug.files_limit=1000
-# Results in benchmark/benchmark_results/
+**Baseline training**
+```bash
+./run_docker_training.sh baseline_gpu0 \
+    --config-name base \
+    trainer.max_epochs=50 \
+    data.allowed_bird_classes='[Bubo_bubo,Apus_apus,Certhia_familiaris]'
 ```
 
-#### GPU Management
-    ```bash
-# Use specific GPU
-./run_docker_benchmark.sh my_benchmark 2  # Uses GPU 2
-./run_docker_training.sh my_training GPU_ID=2  # Uses GPU 2
-./run_docker_distillation.sh my_distill GPU_ID=2  # Uses GPU 2
-
-# CPU-only execution (Mac/no GPU)
-./run_docker_soft_labels.sh my_extraction MAC  # Special MAC flag
-./run_docker_training.sh my_training MAC  # CPU-only training
+**Knowledge distillation**
+```bash
+./run_docker_soft_labels.sh birdnet_labels GPU_ID=0 teacher.threshold=0.2
+./run_docker_distillation.sh student_GPU0 \
+    --config-name distillation \
+    trainer.max_epochs=60 \
+    distillation.soft_labels_path=soft_labels_complete
 ```
 
-#### Parameter Overrides
-    ```bash
-# Training parameters
-./run_docker_distillation.sh my_training GPU_ID=0 \
-  training.epochs=100 \
-  training.batch_size=64 \
-  optimizer.lr=0.0005
-
-# Standard training parameters
-./run_docker_training.sh my_training GPU_ID=0 \
-  training.epochs=50 \
-  optimizer.lr=0.001
-
-# Benchmark parameters  
-./run_docker_benchmark.sh my_benchmark 1 \
-  debug.files_limit=500 \
-  student_model.inference.confidence_threshold=0.2 \
-  benchmark.paths.student_model=custom_model.pt
+**Benchmark**
+```bash
+./run_docker_benchmark.sh compare_student 1 \
+    debug.files_limit=1000 \
+    benchmark.paths.student_model=models/distillation/best_distillation_model.pt
 ```
+
+**Export ONNX**
+```bash
+./run_docker_export_onnx.sh export_full \
+    logs/lightning/birds_distillation_edge/version_12/checkpoints/epoch=59-step=3000.ckpt \
+    exports/birds_logmel.onnx \
+    --config-name base
+```
+
+Tips:
+- `GPU_ID=<id>` selects the CUDA device; use `MAC` or `cpu` for CPU-only runs.
+- Add `+trainer.limit_train_batches=5` for smoke tests.
+- All datasets must be accessible under the repo root or via the `BDE_*` env variables.
 
 ## Configuration Reference
 
-### Main Training Configuration (`config/bird_classification.yaml`)
+### Main Training Configuration (`config/base.yaml` + overrides)
 
-#### Dataset Parameters
-    ```yaml
-    dataset:
-  bird_data_dir: "bird_sound_dataset"
-  allowed_bird_classes: ["Bubo_bubo", "Apus_apus", "Certhia_familiaris", "Poecile_montanus"]
-  
-  # "No Birds" class handling
-  load_pregenerated_no_birds: true
-  pregenerated_no_birds_dir: "augmented_dataset/no_birds/"
-  num_no_bird_samples: 100
-  esc50_no_bird_ratio: 0.5
-  
-  # Audio processing
-  target_sr: 22050
-  clip_duration: 3.0
-  extract_calls: true
-  
-  # Data loading
-  num_workers: 4
-  split_ratios: [0.7, 0.15, 0.15]  # train/val/test
-```
-
-#### Training Parameters
-```yaml
-training:
-  epochs: 100
-  batch_size: 32
-  patience: 15
-  checkpoint_every: 10
-  
-optimizer:
-  type: "Adam"
-  lr: 0.001
-  weight_decay: 1e-4
-  
-model:
-  n_classes: 5  # 4 bird species + 1 no_birds
-  dropout: 0.3
-```
-
-#### Augmentation Settings
-```yaml
-dataset:
-  augmentation:
-    enabled: true
-    noise_level: 0.005
-    time_mask_param: 80
-    freq_mask_param: 80
-    mixup_alpha: 0.2
-```
+- `config/base.yaml` defines shared defaults: project metadata, trainer settings, `data` block (dataset location, batching, augmentation flags), `model.params`, optimizer groups, and optional distillation flags.
+- Experiment-specific overrides live in `config/experiments/`. For example, `config/experiments/four_birds_combined.yaml` selects the eight target species, enables pre-generated "no bird" samples, and switches the model to the combined log-linear spectrogram.
+- Key knobs to adjust:
+  - `data.allowed_bird_classes`, `data.num_no_bird_samples`, `data.esc50_no_bird_ratio`
+  - `model.params.spectrogram_type`, `model.params.matchbox.*`, `model.params.num_classes`
+  - `optimizers.main.lr`, `optimizers.breakpoint_lr`, `optimizers.transition_width_lr`
+  - `losses.focal.enabled` (for class imbalance) and `distillation.*` overrides when training with soft labels
 
 ### Benchmark Configuration (`benchmark/config/`)
 
@@ -852,7 +871,7 @@ benchmark:
     audio_dir: "../bird_sound_dataset"
     no_birds_dir: "../augmented_dataset/no_birds"
     student_model: "../best_distillation_model.pt"
-    student_config: "../config/bird_classification.yaml"
+    student_config: "../config/experiments/four_birds_combined.yaml"
     output_dir: "benchmark_results"
 
 debug:
@@ -885,7 +904,7 @@ comparison:
   plot_style: "seaborn"
 ```
 
-### Knowledge Distillation Configuration (`distillation/configs/`)
+### Knowledge Distillation Configuration (`config/distillation.yaml`)
 
 #### Standard Distillation (`distillation_config.yaml`)
 ```yaml

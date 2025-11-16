@@ -6,7 +6,7 @@ Test script to verify no_birds dataset split fix
 import sys
 sys.path.append('.')
 
-from datasets.dataset_factory import create_no_birds_dataset
+from birds_distillation_edge.data import create_no_birds_dataset
 
 def test_no_birds_split():
     """Test that no_birds samples are properly split between train/val/test"""

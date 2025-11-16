@@ -1,0 +1,51 @@
+defaults:
+  - base
+
+project:
+  name: 4birds_cf_combined_log_linear
+
+trainer:
+  max_epochs: 50
+
+data:
+  module: supervised
+  batch_size: 32
+  load_pregenerated_no_birds: true
+  pregenerated_no_birds_dir: augmented_dataset/no_birds/
+  esc50_no_bird_ratio: 0.5
+  num_no_bird_samples: 800
+  allowed_bird_classes:
+    - Bubo_bubo
+    - Certhia_familiaris
+    - Apus_apus
+    - Certhia_brachydactyla
+    - Emberiza_cia
+    - Lophophanes_cristatus
+    - Periparus_ater
+    - Poecile_montanus
+
+model:
+  params:
+    spectrogram_type: combined_log_linear
+    num_classes: 9
+    n_fft: 1024
+    hop_length: 320
+    matchbox:
+      base_filters: 32
+      num_layers: 3
+      kernel_size: 5
+      stride: 1
+      dropout: 0.05
+
+optimizers:
+  main:
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+  breakpoint_lr: 3.0
+  transition_width_lr: 0.1
+
+losses:
+  focal:
+    enabled: false
+  distillation:
+    enabled: false

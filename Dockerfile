@@ -19,6 +19,8 @@ WORKDIR /app
 # Configure pip for better timeout handling
 RUN pip config set global.timeout 300
 RUN pip config set global.retries 3
+# Newer pip/wheel avoid hash mismatches with aarch64 wheels
+RUN python -m pip install --upgrade pip setuptools wheel
 
 # Install PyTorch separately to ensure compatibility with system CUDA if needed
 RUN pip install --no-cache-dir --timeout 300 torch torchvision torchaudio 
@@ -32,6 +34,9 @@ COPY requirements.txt .
 # This is a safe way to handle cases where torch is also in requirements
 RUN sed -i '/^torch$/d; /^torchaudio$/d; /^torchvision$/d' requirements.txt
 RUN pip install --no-cache-dir --timeout 300 -r requirements.txt
+
+# Ensure ONNX tooling is present for export workflows
+RUN pip install --no-cache-dir --timeout 300 onnx onnxruntime "ml-dtypes>=0.5.0"
 
 # Install packages with retry logic for birdnetlib specifically
 RUN pip install --no-cache-dir --timeout 300 \
@@ -52,7 +57,7 @@ RUN mkdir -p /app/logs && chmod -R 777 /app/logs
 RUN mkdir -p /app/benchmark/benchmark_results && chmod -R 777 /app/benchmark/benchmark_results
 
 # Set environment variables for audio processing
-ENV PYTHONPATH="/app:$PYTHONPATH"
+ENV PYTHONPATH="/app"
 ENV MATPLOTLIB_BACKEND="Agg"
 ENV PYTHONIOENCODING=UTF-8
 

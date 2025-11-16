@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # Import the preprocessing functions
-from datasets.audio_utils import extract_call_segments, apply_bandpass_filter
+from birds_distillation_edge.data.audio_utils import (
+    apply_bandpass_filter,
+    extract_call_segments,
+)
 
 def get_file_size_mb(file_path: Path) -> float:
     """Get file size in MB."""

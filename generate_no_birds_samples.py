@@ -16,8 +16,9 @@ import torch
 import torchaudio
 from pathlib import Path
 
-from datasets.esc50_dataset import ESC50Dataset, download_and_extract_esc50
-from datasets.empty_segment_dataset import EmptySegmentDataset
+from birds_distillation_edge.data import ESC50Dataset
+from birds_distillation_edge.data.empty_segment_dataset import EmptySegmentDataset
+from birds_distillation_edge.data.esc50_dataset import download_and_extract_esc50
 
 def save_no_birds_samples(bird_data_dir, esc50_dir, output_dir, 
                           num_samples=100, esc50_ratio=0.5,
