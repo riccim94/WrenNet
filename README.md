@@ -143,7 +143,7 @@ optimizers:
 python generate_no_birds_samples.py \
   --num_samples 500 \
   --esc50_ratio 0.5 \
-  --energy_threshold_factor 1.5
+  --energy_threshold 1.5
 
 # Configure to use pre-generated samples
 # Set load_pregenerated_no_birds: true in config
